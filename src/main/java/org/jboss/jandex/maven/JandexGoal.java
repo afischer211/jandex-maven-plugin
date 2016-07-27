@@ -24,10 +24,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.apache.maven.plugin.Mojo;
+import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.logging.Log;
+import org.apache.maven.plugins.annotations.Component;
+import org.apache.maven.plugins.annotations.LifecyclePhase;
+import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.codehaus.plexus.util.DirectoryScanner;
 import org.codehaus.plexus.util.IOUtil;
 import org.jboss.jandex.ClassInfo;
@@ -35,25 +40,25 @@ import org.jboss.jandex.Index;
 import org.jboss.jandex.IndexWriter;
 import org.jboss.jandex.Indexer;
 
+import org.sonatype.plexus.build.incremental.BuildContext;
+
 /**
  * Generate a Jandex index for classes compiled as part of the current project.
  *
- * @goal jandex
- * @phase process-classes
- * @threadSafe
  * @author jdcasey
  */
+@Mojo(name="jandex",
+	defaultPhase = LifecyclePhase.PROCESS_CLASSES,
+    threadSafe = true)
 public class JandexGoal
-    implements Mojo
+    extends AbstractMojo
 {
 
     /**
      * By default, process the classes compiled for the project. If you need to process other sets of classes, such as
      * test classes, see the "fileSets" parameter.
-     *
-     * @parameter default-value="${project.build.outputDirectory}"
-     * @readonly
      */
+    @Parameter(defaultValue = "${project.build.outputDirectory}", readonly = true)
     private File classesDir;
 
     /**
@@ -79,40 +84,40 @@ public class JandexGoal
      * <br>
      * <em>NOTE: Standard globbing expressions are supported in includes/excludes.</em>
      *
-     * @parameter
      */
+	 @Parameter
     private List<FileSet> fileSets;
 
     /**
      * If true, construct an implied file-set using the target/classes directory, and process the classes there.
-     *
-     * @parameter default-value="true"
      */
+	 @Parameter(defaultValue = "true")
     private final boolean processDefaultFileSet = true;
 
     /**
      * Print verbose output (debug output without needing to enable -X for the whole build)
-     *
-     * @parameter default-value="false"
      */
+	 @Parameter(defaultValue = "false")
     private boolean verbose = false;
 
     /**
      * The name of the index file. Default's to 'jandex.idx'
-     *
-     * @parameter default-value="jandex.idx"
      */
+	 @Parameter(defaultValue = "jandex.idx")
     private String indexName = "jandex.idx";
 
     /**
      * Skip execution if set.
-     *
-     * @parameter default-value="false" expression="${jandex.skip}"
      */
+	@Parameter(defaultValue = "false", property = "jandex.skip")
     private boolean skip = true;
 
     private Log log;
 
+	// Injection of BuildContext for m2e-compatibility
+    @Component
+    protected BuildContext buildContext;
+	
     public void execute()
         throws MojoExecutionException, MojoFailureException
     {
@@ -233,6 +238,7 @@ public class JandexGoal
             {
                 IOUtil.close( indexOut );
             }
+			refreshEclipse(idx);
         }
 
     }
@@ -279,4 +285,13 @@ public class JandexGoal
     public void setIndexName(String indexName) {
         this.indexName = indexName;
     }
+	
+    private void refreshEclipse(final File file) {
+        if (buildContext != null && file != null && file.exists()) {
+            if (doVerbose())
+                getLog().debug("refresh for build-context with class <" + buildContext.getClass().getName() + ">");
+            buildContext.refresh(file); // inform Eclipse-Workspace about file-modifications
+        }
+    }
+
 }
